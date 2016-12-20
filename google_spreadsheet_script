@@ -1,0 +1,292 @@
+function criarAnexoII(e) {
+  if(e.changeType != 'INSERT_ROW')
+    return;
+  MONTH_NAME = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  
+  var ss = SpreadsheetApp.getActive();
+  var s = ss.getSheets()[0];
+  var allData = s.getDataRange();
+  var range = s.getRange(allData.getLastRow(), 1, 1, allData.getLastColumn());
+  var values = range.getValues();
+  var displayValues = range.getDisplayValues();
+  var md = CriarObjetoMalaDireta(values, displayValues);
+  
+  var modelDocId = '14SPLGLEeBtjAbFUtmYdE6lVibA_5yrA_3FPboN8pM3g';
+  var modelFile = DriveApp.getFileById(modelDocId);
+  var pastaDestino = GetPastaDestino(modelFile, values[0][0]);
+  var modelDoc = DocumentApp.openById(modelDocId);
+  var doc = DocumentApp.openById(modelFile.makeCopy('Anexo II ' + md.nomeBeneficiado + ' - ' + md.justificativa + ' - ' + md.data.replace(/\//g,'-'), pastaDestino).getId());
+  
+  var fields = GetBookmarksIds().map(function (id) {
+    return doc.getBookmark(id);
+  });
+  
+  PreencherCampos(fields, md);
+  
+  doc.saveAndClose();
+  doc.addViewers([md.emailSolicitante, md.emailBeneficiado]);
+  
+  enviarAnexoII(md, doc);
+};
+
+function GetPastaDestino(docFile, data) {
+  var pastaSolicitacoes = docFile.getParents().next();
+  var iteradorPastaAno = pastaSolicitacoes.getFolders();
+  var pastaAno, pastaMes;
+  while (iteradorPastaAno.hasNext()) {
+    pastaAno = iteradorPastaAno.next();
+    if (pastaAno.getName() == data.getFullYear()) {
+      var iteradorPastaMes = pastaAno.getParents();
+      while (iteradorPastaMes.hasNext()) {
+        pastaMes = iteradorPastaMes.next();
+        if (pastaMes.getName() == MONTH_NAME[data.getMonth()])
+          break;
+        else
+          pastaMes = null;
+      }
+      if (pastaMes)
+        break;
+      else {
+        pastaMes = pastaAno.createFolder(MONTH_NAME[data.getMonth()]);
+      }
+    }
+    else
+      pastaAno = null;
+  }
+  if (!pastaAno) {
+    pastaAno = pastaSolicitacoes.createFolder(data.getFullYear());
+    pastaMes = pastaAno.createFolder(MONTH_NAME[data.getMonth()]);
+  }
+  return pastaMes;
+}
+
+function enviarAnexoII(md, doc) {
+  var textoMensagem = 'Prezado(a) ' + md.nomeSolicitante + ' ,\n\n';
+  textoMensagem += 'segue Anexo II de ' + md.nomeBeneficiado + ' referente ao(à) ' + md.justificativa + ', com saída em ';
+  textoMensagem += md.dataSaida + ' às ' + md.horaSaida + ' e retorno em ' + md.dataRetorno + ' às ' + md.horaRetorno;
+  textoMensagem += ', no valor total de R$ ' + FixOutputCurrency(md.valorSolicitado) + ', gerado automaticamente pelo ';
+  textoMensagem += 'formulário online https://www.jotform.com/62986167417670.\n\n';
+  textoMensagem += 'Em caso de dúvidas, entre em contato pelo e-mail auxiliar@cress-mg.org.br.\n\n';
+  textoMensagem += 'Atenciosamente,\n\n';
+  textoMensagem += 'Setor Administrativo - CRESS-MG 6ª Região';
+  var file = DriveApp.getFileById(doc.getId());
+  GmailApp.sendEmail(md.emailSolicitante, file.getName(), textoMensagem, {
+    attachments: [file],
+    from: 'auxiliar@cress-mg.org.br',
+    cc: md.emailBeneficiado + ', auxiliar@cress-mg.org.br',
+    name: 'Gerador Automático de Anexo II'
+  });
+};
+
+function PreencherCampos(fields, md) {
+  fields[0].getPosition().insertText(md.setorSolicitante);
+  fields[1].getPosition().insertText(md.data);
+  fields[2].getPosition().insertText(md.qntDiarias.toFixed(1).replace('.', ','));
+  fields[3].getPosition().insertText(md.qntPassagensAereas);
+  fields[4].getPosition().insertText(md.qntPassagensRodoviarias);
+  fields[5].getPosition().insertText(md.nomeBeneficiado + (md.inscricaoCress ? ' - CRESS ' + md.inscricaoCress : ''));
+  fields[6].getPosition().insertText(md.id);
+  fields[7].getPosition().insertText(md.cpf);
+  fields[8].getPosition().insertText(md.nomeBanco);
+  fields[9].getPosition().insertText(md.agencia);
+  fields[10].getPosition().insertText(md.conta);
+  fields[11].getPosition().insertText(md.operacao);
+  fields[12].getPosition().insertText(md.dataSaida);
+  fields[13].getPosition().insertText(md.horaSaida);
+  fields[14].getPosition().insertText(md.dataRetorno);
+  fields[15].getPosition().insertText(md.horaRetorno);
+  fields[16].getPosition().insertText(md.meioTransporte);
+  fields[17].getPosition().insertText(md.cidadeEstadoDestino);
+  fields[18].getPosition().insertText(md.justificativa);
+  fields[19].getPosition().insertText(FixOutputCurrency(md.valorDiárias));
+  fields[20].getPosition().insertText(FixOutputCurrency(md.valorTraslados));
+  fields[21].getPosition().insertText(FixOutputCurrency(md.valorTransporteLocal));
+  fields[22].getPosition().insertText(FixOutputCurrency(md.valorHospedagem));
+  fields[23].getPosition().insertText(FixOutputCurrency(md.valorPassagens));
+  fields[24].getPosition().insertText(FixOutputCurrency(md.valorSolicitado));
+  fields[25].getPosition().insertText(md.data);
+  fields[26].getPosition().insertText(md.data);
+};
+
+function GetDate(datetime) {
+  return (datetime.getDate() > 9 ? '' : '0') + datetime.getDate() + '/' + (datetime.getMonth() + 1 > 9 ? '' : '0') + (datetime.getMonth() + 1) + '/' + datetime.getFullYear();
+};
+
+function GetTime(datetime) {
+  return (datetime.getHours() > 9 ? '' : '0') + datetime.getHours() + ':' + (datetime.getMinutes() > 9 ? '' : '0') + datetime.getMinutes();
+};
+
+function CriarObjetoMalaDireta(values, displayValues) {
+  var md = {};
+  var rowValues = values[0];
+  var rowDisplayValues = displayValues[0];
+  md.data = GetDate(rowValues[0]);
+  md.nomeSolicitante = rowValues[1];
+  md.emailSolicitante = rowValues[2];
+  md.setorSolicitante = rowValues[3];
+  md.nomeBeneficiado = rowValues[4];
+  md.emailBeneficiado = rowValues[5];
+  md.inscricaoCress = rowDisplayValues[6];
+  md.id = rowValues[7];
+  md.cpf = rowValues[8];
+  md.nomeBanco = rowValues[9];
+  md.agencia = rowDisplayValues[10];
+  md.conta = rowDisplayValues[11];
+  md.operacao = rowDisplayValues[12];
+  switch(true){
+    case rowValues[13].indexOf('Aéreo') >= 0:
+      md.meioTransporte = 'Aéreo';
+    case rowValues[13].indexOf('Terrestre') >= 0:
+      if(md.meioTransporte)
+        md.meioTransporte = md.meioTransporte + ' e Terrestre';
+      else
+        md.meioTransporte = 'Carro Próprio';
+    case rowValues[13].indexOf('Terrestre') >= 0:
+      if(md.meioTransporte)
+        md.meioTransporte = md.meioTransporte + ' e Carro Próprio';
+      else
+        md.meioTransporte = 'Carro Próprio';
+  }
+  md.qntPassagensAereas = rowValues[14];
+  md.qntPassagensRodoviarias = rowValues[15];
+  md.cidadeEstadoDestino = rowValues[16];
+  md.justificativa = rowValues[17];
+  md.dataSaida = GetDate(rowValues[18]);
+  md.horaSaida = GetTime(rowValues[18]);
+  md.dataRetorno = GetDate(rowValues[19]);
+  md.horaRetorno = GetTime(rowValues[19]);
+  md.qntDiarias = CalcularDiarias(md.dataSaida, md.horaSaida, md.dataRetorno, md.horaRetorno);
+  md.valorDiárias = GetValorDiarias(md.cidadeEstadoDestino, md.qntDiarias);
+  md.valorTraslados = FixInputCurrency(rowValues[20]);
+  md.valorTransporteLocal = FixInputCurrency(rowValues[21]);
+  md.valorHospedagem = FixInputCurrency(rowValues[22]);
+  md.valorPassagens = FixInputCurrency(rowValues[23]);
+  md.valorSolicitado = md.valorDiárias + md.valorTraslados + md.valorTransporteLocal + md.valorHospedagem + md.valorPassagens;
+  md.haAnexos = rowValues[24].length > 0;
+  return md;
+};
+
+function FixInputCurrency(texto) {
+  if (typeof texto == 'number')
+    return texto;
+  if (!texto)
+    return 0;
+  return Number(texto.replace(/\./g, '').replace(/\,/, '.'));
+};
+
+function FixOutputCurrency(numero) {
+  var reais, centavos;
+  [reais, centavos] = String(numero).split('.');
+  reais = reais.split('').reverse().map(function (c, idx) {
+    if (idx && !(idx % 3))
+      return '.' + c;
+    return c;
+  }).reverse();
+  return reais.join('') + ',' + (centavos ? centavos : '00');
+};
+
+function GetValorDiarias(cidadeEstadoDestino, qntDiarias) {
+  var separador, cidade, estado, valorDiaria;
+  if (cidadeEstadoDestino.split('/').length > 1)
+    separador = '/';
+  else if (cidadeEstadoDestino.split('-').length > 1)
+    separador = '-'
+  
+  if (separador) {
+    [cidade, estado] = cidadeEstadoDestino.split(separador);
+    cidade.trim();
+    estado.trim();
+  }
+  else
+    cidade = cidadeEstadoDestino.trim();
+  
+  if (!estado)
+    valorDiaria = 60;
+  else {
+    if (estado.toLowerCase() != 'mg' && estado.toLowerCase() != 'minas gerais')
+      valorDiaria = 90;
+    else
+      valorDiaria = 60;
+  }
+  
+  return qntDiarias * valorDiaria;
+};
+
+function CalcularDiarias() {
+  var counter = 0;
+  while (counter < arguments.length) {  
+    if(typeof arguments[counter] != 'string')
+      throw new Error('Argumentos devem ser do tipo texto');
+    
+    if(!arguments[counter++])
+      throw new Error('Argumentos não podem ser vazios');
+  }
+  
+  var date1,
+      time1,
+      date2,
+      time2,
+      sdatetime,
+      fdatetime;
+
+  if(arguments.length > 2) {
+    date1 = arguments[0];
+    time1 = arguments[1]
+    date2 = arguments[2];
+    time2 = arguments[3];
+  }
+  else if(arguments.length == 2) {
+    date1 = arguments[0].split(' ')[0];
+    time1 = arguments[0].split(' ')[1];
+    date2 = arguments[1].split(' ')[0];
+    time2 = arguments[1].split(' ')[1];
+  }
+  else
+    throw new Error('Número de argumentos não aceito.');
+  
+  sdatetime = new Date(date1.split('/')[0] + ' ' + MONTH_NAME[Number(date1.split('/')[1]) - 1] + ' ' + date1.split('/')[2] + ' ' + time1 + ' ' + '-0300');
+  fdatetime = new Date(date2.split('/')[0] + ' ' + MONTH_NAME[Number(date2.split('/')[1]) - 1] + ' ' + date2.split('/')[2] + ' ' + time2 + ' ' + '-0300');
+  var days = (fdatetime - sdatetime)/(24*60*60*1000);
+
+  if (days < 1 && date1 != date2)
+    days = 1; //pernoite
+  
+  if(Math.abs(days - Math.round(days)) >= 0.25) // 6 horas
+    days = Math.floor(days) + 0.5;
+  else
+    days = Math.floor(days);
+  
+  return days;
+};
+
+function GetBookmarksIds() {
+  return [
+    'id.ws0o04wlll14',
+    'id.ikc0v4tuga96',
+    'id.aisvl5ca78wm',
+    'id.9va5gqraxffq',
+    'id.z45hlcr4dtq4',
+    'id.luqogt6lz4q6',
+    'id.vi971ahtbnpu',
+    'id.70r0vhm2g8e',
+    'id.exfux02tvlle',
+    'id.bsttuz59v9g4',
+    'id.rfzmrmm1kxoy',
+    'id.1p9krae1bqf8',
+    'id.nkv66l4o8v9l',
+    'id.g3immyv4mhjv',
+    'id.lvq14r6a4xh8',
+    'id.9x2hx8ywd3mw',
+    'id.oiyj4fssvgxv',
+    'id.imo43zjw25k5',
+    'id.e3dk2au5mcbo',
+    'id.ei3zaglrfow1',
+    'id.97m9rzgdxll',
+    'id.ehnzb61mog34',
+    'id.xrxwm8ca3adh',
+    'id.v35q53dqusvf',
+    'id.qoiryrjom5e5',
+    'id.kzimmrgey3sh',
+    'id.j4ayfuwu6hqv'
+  ];
+};
